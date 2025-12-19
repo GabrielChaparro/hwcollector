@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 public class CreateListingRequest {
-    private String hotwheelId;
+    private String hotwheelCode;
     private ListingType type;
     private Double price;
     private Integer durationHours; // solo para AUCTION

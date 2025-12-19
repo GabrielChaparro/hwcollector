@@ -3,29 +3,15 @@ package com.hwcollectors.app.controller;
 import com.hwcollectors.app.dto.BidEvent;
 import com.hwcollectors.app.dto.BidRequest;
 import com.hwcollectors.app.dto.CreateListingRequest;
-import com.hwcollectors.app.model.Bid;
-import com.hwcollectors.app.model.CollectionItem;
-import com.hwcollectors.app.model.Listing;
-import com.hwcollectors.app.model.ListingStatus;
-import com.hwcollectors.app.model.ListingType;
-import com.hwcollectors.app.model.User;
-import com.hwcollectors.app.repository.CollectionItemRepository;
-import com.hwcollectors.app.repository.HotWheelRepository;
-import com.hwcollectors.app.repository.ListingRepository;
-import com.hwcollectors.app.repository.UserRepository;
+import com.hwcollectors.app.model.*;  // ← Importa todas las entidades
+import com.hwcollectors.app.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -35,8 +21,7 @@ import java.util.List;
 @RequestMapping("/api/listings")
 public class ListingController {
 
-    @Autowired
-    private ListingRepository listingRepo;
+    @Autowired private ListingRepository listingRepo;
     @Autowired private UserRepository userRepo;
     @Autowired private CollectionItemRepository collectionRepo;
     @Autowired private HotWheelRepository hotwheelRepo;
@@ -51,13 +36,18 @@ public class ListingController {
         User seller = userRepo.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seller not found"));
 
+        // ❌ CORREGIR: hotwheelId debe ser Long, buscar HotWheel por code
+        HotWheel hotwheel = hotwheelRepo.findByCode(request.getHotwheelCode())  // ← CAMBIAR A STRING CODE
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HotWheel not found"));
+
         // Verificar que el vendedor tiene el item en colección
-        CollectionItem item = collectionRepo.findByUserIdAndHotwheelId(seller.getId(), request.getHotwheelId())
+        CollectionItem item = collectionRepo.findByUserIdAndHotwheelId(seller.getId(), hotwheel.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Item not in your collection"));
 
+        // ✅ CREAR Listing CORRECTO
         Listing listing = new Listing();
-        listing.setSellerId(seller.getId());
-        listing.setHotwheelId(request.getHotwheelId());
+        listing.setSeller(seller);  // ← Relación JPA
+        listing.setHotwheel(hotwheel);  // ← Relación JPA
         listing.setType(request.getType());
         listing.setPrice(request.getPrice());
         listing.setCurrentBid(request.getType() == ListingType.AUCTION ? request.getPrice() : null);
@@ -83,15 +73,13 @@ public class ListingController {
     @PostMapping("/{id}/bid")
     @PreAuthorize("hasRole('COLLECTOR')")
     public ResponseEntity<Listing> placeBid(
-            @PathVariable String id,
+            @PathVariable Long id,  // ✅ Ya correcto
             @RequestBody BidRequest bidRequest,
             Authentication auth) {
 
-        // Buscar listing
         Listing listing = listingRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
 
-        // Validaciones
         if (listing.getStatus() != ListingStatus.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Listing is not active");
         }
@@ -104,29 +92,26 @@ public class ListingController {
         User bidder = userRepo.findByKeycloakId(bidderKeycloakId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Bidder not found"));
 
-        // Validar puja mayor que la actual
         Double currentBid = listing.getCurrentBid() != null ? listing.getCurrentBid() : 0.0;
         if (bidRequest.getAmount() <= currentBid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Bid must be higher than current bid: " + currentBid);
         }
 
-        // Crear nueva puja
+        // ✅ CORREGIR Bid - debe tener relación JPA con Listing/User
         Bid bid = new Bid();
-        bid.setBidderId(bidder.getId());
+        bid.setListing(listing);  // ← Relación JPA
+        bid.setBidder(bidder);    // ← Relación JPA (agregar en Bid entity)
         bid.setAmount(bidRequest.getAmount());
+
         listing.getBids().add(bid);
-
-        // Actualizar listing
         listing.setCurrentBid(bidRequest.getAmount());
-        listing.setHighestBidderId(bidder.getId());
+        listing.setHighestBidder(bidder);  // ← Relación JPA
 
-        // Guardar cambios
         Listing updatedListing = listingRepo.save(listing);
 
-        // Enviar notificación WebSocket
         BidEvent event = new BidEvent();
-        event.setListingId(id);
+        event.setListingId(id.toString());  // ✅ Long → String para WebSocket
         event.setAmount(bidRequest.getAmount());
         event.setBidderName(bidder.getEmail());
         event.setTimestamp(LocalDateTime.now());
@@ -139,7 +124,7 @@ public class ListingController {
     @PostMapping("/{id}/buy")
     @PreAuthorize("hasRole('COLLECTOR')")
     public ResponseEntity<String> buyFixedPrice(
-            @PathVariable String id, Authentication auth) {
+            @PathVariable Long id, Authentication auth) {
 
         Listing listing = listingRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -155,11 +140,17 @@ public class ListingController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient balance");
         }
 
-        // Transferencia inmediata (lógica similar a closeAuction)
-        // ...
+        // Transferencia inmediata
+        User seller = listing.getSeller();
+        seller.setBalance(seller.getBalance() + listing.getPrice());
+        buyer.setBalance(buyer.getBalance() - listing.getPrice());
+        listing.setStatus(ListingStatus.SOLD);
+        listing.setHighestBidder(buyer);
+
+        userRepo.save(seller);
+        userRepo.save(buyer);
+        listingRepo.save(listing);
 
         return ResponseEntity.ok("Purchase completed successfully");
     }
 }
-
-

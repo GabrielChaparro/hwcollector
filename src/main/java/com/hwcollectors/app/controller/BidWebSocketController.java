@@ -21,24 +21,26 @@ import java.time.LocalDateTime;
 @Controller
 public class BidWebSocketController {
 
-    @Autowired
-    private SimpMessagingTemplate messagingTemplate;
+    @Autowired private SimpMessagingTemplate messagingTemplate;
     @Autowired private ListingRepository listingRepo;
     @Autowired private UserRepository userRepo;
 
-    @MessageMapping("/bid")
-    @SendTo("/topic/listings/{listingId}")
-    public BidEvent handleBid(@DestinationVariable String listingId, BidRequest bidRequest,
-                              Principal principal) {
+    @MessageMapping("/bid/{listingId}")  // ← CAMBIAR: Path con parámetro
+    @SendTo("/topic/listings/{listingId}")  // ← SendTo con parámetro
+    public BidEvent handleBid(
+            @DestinationVariable Long listingId,  // ← Long para PostgreSQL
+            BidRequest bidRequest,
+            Principal principal) {
 
-        // Validar listing y puja (lógica simplificada)
-        Listing listing = listingRepo.findById(listingId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        // ✅ CORREGIR: Long listingId para PostgreSQL
+        Listing listing = listingRepo.findById(listingId)  // ← findById(Long)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
 
-        User bidder = userRepo.findByKeycloakId(principal.getName()).orElseThrow();
+        User bidder = userRepo.findByKeycloakId(principal.getName())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Bidder not found"));
 
         BidEvent event = new BidEvent();
-        event.setListingId(listingId);
+        event.setListingId(listingId.toString());  // ← Long → String para JSON
         event.setAmount(bidRequest.getAmount());
         event.setBidderName(bidder.getEmail());
         event.setTimestamp(LocalDateTime.now());
@@ -49,4 +51,3 @@ public class BidWebSocketController {
         return event;
     }
 }
-

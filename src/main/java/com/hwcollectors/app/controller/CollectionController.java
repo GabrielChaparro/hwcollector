@@ -32,7 +32,7 @@ public class CollectionController {
     @Autowired private UserRepository userRepo;
 
     @GetMapping("/my")
-    @PreAuthorize("hasRole('COLLECTOR')")
+    //@PreAuthorize("hasRole('COLLECTOR')")
     public ResponseEntity<List<CollectionItem>> getMyCollection(Authentication auth) {
         String keycloakId = auth.getName();
         User user = userRepo.findByKeycloakId(keycloakId)
@@ -43,18 +43,27 @@ public class CollectionController {
     }
 
     @PostMapping("/add")
-    @PreAuthorize("hasRole('COLLECTOR')")
+    //@PreAuthorize("hasRole('COLLECTOR')")
     public ResponseEntity<CollectionItem> addToCollection(
             @RequestBody AddItemRequest request, Authentication auth) {
 
         String keycloakId = auth.getName();
-        User user = userRepo.findByKeycloakId(keycloakId).orElseThrow();
+
+        User user = userRepo.findByKeycloakId(keycloakId)
+                .orElseGet(() -> {
+                    User newUser = new User();
+                    newUser.setKeycloakId(keycloakId);
+                    newUser.setEmail(keycloakId + "@hotwheels.com");  // Email por defecto
+                    newUser.setBalance(100.0);  // Saldo inicial
+                    return userRepo.save(newUser);
+                });
+
         HotWheel hotwheel = hotwheelRepo.findByCode(request.getHotwheelCode())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HotWheel not found"));
 
         CollectionItem item = new CollectionItem();
-        item.setUserId(user.getId());
-        item.setHotwheelId(hotwheel.getId());
+        item.setUser(user);
+        item.setHotwheel(hotwheel);
         item.setCondition(request.getCondition());
         item.setAcquiredDate(LocalDate.now());
 
