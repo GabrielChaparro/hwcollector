@@ -1,10 +1,10 @@
 package com.hwcollectors.app.controller;
 
-import com.hwcollectors.app.dto.BidEvent;
-import com.hwcollectors.app.dto.BidRequest;
-import com.hwcollectors.app.dto.CreateListingRequest;
+import com.hwcollectors.app.dto.*;
 import com.hwcollectors.app.model.*;  // ← Importa todas las entidades
 import com.hwcollectors.app.repository.*;
+import com.hwcollectors.app.utils.BidMapper;
+import com.hwcollectors.app.utils.ListingMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,17 +26,19 @@ public class ListingController {
     @Autowired private CollectionItemRepository collectionRepo;
     @Autowired private HotWheelRepository hotwheelRepo;
     @Autowired private SimpMessagingTemplate messagingTemplate;
+    @Autowired private ListingMapper listingMapper;
+    @Autowired private BidMapper bidMapper;
+
 
     @PostMapping
     @PreAuthorize("hasRole('COLLECTOR')")
-    public ResponseEntity<Listing> createListing(
+    public ResponseEntity<ListingDto> createListing(
             @RequestBody CreateListingRequest request, Authentication auth) {
 
         String keycloakId = auth.getName();
         User seller = userRepo.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seller not found"));
 
-        // ❌ CORREGIR: hotwheelId debe ser Long, buscar HotWheel por code
         HotWheel hotwheel = hotwheelRepo.findByCode(request.getHotwheelCode())  // ← CAMBIAR A STRING CODE
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HotWheel not found"));
 
@@ -44,10 +46,9 @@ public class ListingController {
         CollectionItem item = collectionRepo.findByUserIdAndHotwheelId(seller.getId(), hotwheel.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Item not in your collection"));
 
-        // ✅ CREAR Listing CORRECTO
         Listing listing = new Listing();
-        listing.setSeller(seller);  // ← Relación JPA
-        listing.setHotwheel(hotwheel);  // ← Relación JPA
+        listing.setSeller(seller);
+        listing.setHotwheel(hotwheel);
         listing.setType(request.getType());
         listing.setPrice(request.getPrice());
         listing.setCurrentBid(request.getType() == ListingType.AUCTION ? request.getPrice() : null);
@@ -58,21 +59,22 @@ public class ListingController {
         }
 
         Listing saved = listingRepo.save(listing);
-        return ResponseEntity.ok(saved);
+        return ResponseEntity.ok(listingMapper.toDto(saved));
     }
 
     @GetMapping("/active")
-    public ResponseEntity<List<Listing>> getActiveListings(
+    public ResponseEntity<List<ListingDto>> getActiveListings(
             @RequestParam(required = false) ListingType type) {
-        if (type != null) {
-            return ResponseEntity.ok(listingRepo.findByStatusAndType(ListingStatus.ACTIVE, type));
-        }
-        return ResponseEntity.ok(listingRepo.findByStatus(ListingStatus.ACTIVE));
+        List<Listing> listings = (type != null)
+                ? listingRepo.findByStatusAndType(ListingStatus.ACTIVE, type)
+                : listingRepo.findByStatus(ListingStatus.ACTIVE);
+        return ResponseEntity.ok(listingMapper.toDtoList(listings));
+
     }
 
     @PostMapping("/{id}/bid")
     @PreAuthorize("hasRole('COLLECTOR')")
-    public ResponseEntity<Listing> placeBid(
+    public ResponseEntity<ListingDto> placeBid(
             @PathVariable Long id,  // ✅ Ya correcto
             @RequestBody BidRequest bidRequest,
             Authentication auth) {
@@ -118,7 +120,7 @@ public class ListingController {
 
         messagingTemplate.convertAndSend("/topic/listings/" + id, event);
 
-        return ResponseEntity.ok(updatedListing);
+        return ResponseEntity.ok(listingMapper.toDto(updatedListing));
     }
 
     @PostMapping("/{id}/buy")
@@ -153,4 +155,15 @@ public class ListingController {
 
         return ResponseEntity.ok("Purchase completed successfully");
     }
+
+    @GetMapping("/{id}/bids")
+    public ResponseEntity<List<BidDto>> getListingBids(@PathVariable Long id) {
+        Listing listing = listingRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
+
+        // asumiendo que bids está mapeado con @OneToMany
+        List<Bid> bids = listing.getBids();
+        return ResponseEntity.ok(bidMapper.toDtoList(bids));
+    }
+
 }
