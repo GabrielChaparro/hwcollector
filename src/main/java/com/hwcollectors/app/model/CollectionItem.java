@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -30,5 +31,18 @@ public class CollectionItem {
     private String condition;
 
     private LocalDate acquiredDate;
+
     private String notes;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Availability availability = Availability.NOT_FOR_SALE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Visibility visibility = Visibility.PRIVATE;
+
+    @Column(name = "ask_price", precision = 10, scale = 2)
+    private BigDecimal askPrice;
+
 }

@@ -2,23 +2,20 @@ package com.hwcollectors.app.controller;
 
 import com.hwcollectors.app.dto.AddItemRequest;
 import com.hwcollectors.app.dto.CollectionItemDto;
+import com.hwcollectors.app.dto.UpdateCollectionItemRequest;
 import com.hwcollectors.app.model.CollectionItem;
 import com.hwcollectors.app.model.HotWheel;
 import com.hwcollectors.app.model.User;
 import com.hwcollectors.app.repository.CollectionItemRepository;
 import com.hwcollectors.app.repository.HotWheelRepository;
 import com.hwcollectors.app.repository.UserRepository;
+import com.hwcollectors.app.service.CollectionService;
 import com.hwcollectors.app.utils.CollectionItemMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -39,6 +36,9 @@ public class CollectionController {
 
     @Autowired
     private CollectionItemMapper collectionItemMapper;
+
+    @Autowired
+    private CollectionService collectionService;
 
     @GetMapping("/my")
     //@PreAuthorize("hasRole('COLLECTOR')")
@@ -79,5 +79,14 @@ public class CollectionController {
         CollectionItem saved = collectionRepo.save(item);
         return ResponseEntity.ok(collectionItemMapper.toDto(saved));
     }
+
+    @PatchMapping("/items/{id}")
+    public CollectionItemDto updateItem(
+            @PathVariable Long id,
+            @RequestBody UpdateCollectionItemRequest req,
+            Authentication auth) {
+        return collectionService.updateItem(auth.getName(), id, req);
+    }
+
 }
 
